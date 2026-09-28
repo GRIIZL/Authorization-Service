@@ -65,6 +65,16 @@ namespace Documents.Application.Services
             return await _storageService.DownloadFileAsync(storageKey, cancellationToken);
         }
 
+        /// <summary>
+        /// Возвращает ссылку на файл в MinIO: браузер скачивает документ напрямую из хранилища
+        /// и кэширует её, не обращаясь к API сервиса при повторных загрузках.
+        /// </summary>
+        public Task<string> GetDocumentDownloadLinkAsync(string storageKey, string fileName, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_storageService.GetDownloadLink(storageKey, fileName));
+        }
+
+
         public async Task<DocumentMetadata?> GetMetadataByEntityIdAsync(Guid entityId, CancellationToken cancellationToken = default)
         {
             return await _metadataRepository.GetByEntityIdAsync(entityId, cancellationToken);
