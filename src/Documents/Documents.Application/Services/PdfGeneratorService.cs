@@ -24,7 +24,10 @@ namespace Documents.Application.Services
                     page.Size(PageSizes.A4);
                     page.Margin(2, Unit.Centimetre);
                     page.PageColor(Colors.White);
-                    page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
+                    // Шрифт не указывается явно: QuestPDF по умолчанию использует встроенный Lato,
+                    // который зарегистрирован всегда. Arial в списке зарегистрированных семейств
+                    // отсутствует, и его явное указание роняло генерацию с DocumentDrawingException.
+                    page.DefaultTextStyle(x => x.FontSize(11));
 
                     // 1. ШАПКА ДОКУМЕНТА (Header)
                     page.Header()

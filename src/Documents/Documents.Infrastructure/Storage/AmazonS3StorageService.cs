@@ -67,6 +67,7 @@ namespace Documents.Infrastructure.Storage
                 BucketName = _options.BucketName,
                 Key = storageKey,
                 Verb = HttpVerb.GET,
+                Protocol = Amazon.S3.Protocol.HTTP,
                 Expires = GetStableLinkExpiry(),
                 // Заголовки ответа «зашиваются» в подпись ссылки: браузер получит
                 // имя файла и разрешение на кэширование прямо от MinIO.
