@@ -17,20 +17,17 @@ namespace Auth.Application.Services
         private readonly IAccountRepository _accountRepository;
         private readonly ITokenService _tokenService;
         private readonly IEventPublisher _eventPublisher;
-        private readonly IEmailSender _emailSender;
         private readonly EmailOptions _emailOptions;
 
         public AuthService(
             IAccountRepository accountRepository,
             ITokenService tokenService,
             IEventPublisher eventPublisher,
-            IEmailSender emailSender,
             IOptions<EmailOptions> emailOptions)
         {
             _accountRepository = accountRepository;
             _tokenService = tokenService;
             _eventPublisher = eventPublisher;
-            _emailSender = emailSender;
             _emailOptions = emailOptions.Value;
         }
 
@@ -75,7 +72,15 @@ await _accountRepository.AddAsync(newAccount, cancellationToken);
                 _emailOptions.ConfirmationUrlTemplate,
                 Uri.EscapeDataString(verificationToken));
 
-            await _emailSender.SendVerificationEmailAsync(newAccount.Email, confirmationLink, cancellationToken);
+            // Письмо отправляется асинхронно консьюмером из RabbitMQ: регистрация не ждёт
+            // SMTP и не падает с 500, если почтовый сервер временно недоступен.
+            await _eventPublisher.PublishAsync(new EmailVerificationRequestedEvent
+            {
+                UserId = newAccount.Id,
+                RecipientEmail = newAccount.Email,
+                ConfirmationLink = confirmationLink,
+                RequestedAt = DateTime.UtcNow
+            }, cancellationToken);
 
             return true;
         }
