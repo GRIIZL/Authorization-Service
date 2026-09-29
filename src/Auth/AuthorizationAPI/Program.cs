@@ -1,6 +1,4 @@
 using System;
-using System.Diagnostics;
-using System.IO;
 using Auth.Infrastructure.Redis;
 using Auth.Infrastructure.RabbitMQ;
 using AuthorizationAPI.Services;
@@ -11,28 +9,9 @@ using Auth.Application.Services;
 using Auth.Infrastructure.PostgreSql.Data;
 using Auth.Infrastructure.PostgreSql.Repositories;
 
-// Автоматический запуск баз Postgres и Redis в Docker
-try
-{
-    var startInfo = new ProcessStartInfo
-    {
-        FileName = "docker-compose",
-        Arguments = "up -d",
-        WorkingDirectory = @"C:\Projects\Authorization-Service",
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-    };
-    using var process = Process.Start(startInfo);
-    process?.WaitForExit();
-    Console.WriteLine("[Docker Auto-Start]: Инфраструктура в Docker (Postgres + Redis) запущена.");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"[Docker Auto-Start Warning]: {ex.Message}");
-}
-
+// Инфраструктура (Postgres, Redis, RabbitMQ, MailHog, MinIO) поднимается вручную:
+// docker compose up -d. Автозапуск и авто-остановка контейнеров из приложения убраны —
+// сервис не должен управлять чужим жизненным циклом.
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -57,9 +36,10 @@ builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddAuthMessaging(builder.Configuration);
 // Публикатор событий: адаптер над MassTransit IPublishEndpoint
 builder.Services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
-// Отправка писем: SMTP-настройки берутся из секции "Email" (appsettings / user-secrets)
+// Отправка писем: SMTP-настройки берутся из секции "Email" (appsettings / user-secrets).
+// Письма уходят через MailKit на SMTP-сервер; локально это MailHog.
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<IEmailSender, MailKitEmailSender>();
 builder.Services.AddScoped<AuthService>();
 
 var app = builder.Build();
@@ -77,25 +57,6 @@ if (app.Environment.IsDevelopment())
         }
     });
 }
-
-// Авто-остановка контейнеров
-app.Lifetime.ApplicationStopping.Register(() =>
-{
-    try
-    {
-        var stopInfo = new ProcessStartInfo
-        {
-            FileName = "docker-compose",
-            Arguments = "down",
-            WorkingDirectory = @"C:\Projects\Authorization-Service",
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        using var stopProcess = Process.Start(stopInfo);
-        stopProcess?.WaitForExit();
-    }
-    catch { }
-});
 
 app.UseHttpsRedirection();
 app.UseAuthorization();

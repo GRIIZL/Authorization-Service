@@ -92,6 +92,17 @@ services:
       - clinic-network
 
 
+  # MailHog — локальный SMTP-сервер для разработки: собирает письма в себя,
+  # вся почта видна в веб-интерфейсе на http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: clinic-mailhog
+    ports:
+      - "1025:1025"   # SMTP для приложений
+      - "8025:8025"   # Веб-интерфейс просмотренных писем
+    networks:
+      - clinic-network
+
   minio:
     image: quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z
     container_name: clinic-minio
