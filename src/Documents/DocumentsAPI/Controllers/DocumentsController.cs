@@ -1,15 +1,11 @@
 using System;
-using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Documents.Application.Configuration;
-using Documents.Application.Services;
-using Documents.Domain;
+using Documents.Application.Interfaces;
 
 namespace DocumentsAPI.Controllers
 {
@@ -17,12 +13,14 @@ namespace DocumentsAPI.Controllers
     [Route("api/[controller]")]
     public class DocumentsController : ControllerBase
     {
-        private readonly DocumentBusinessService _documentService;
+        // Единственная бизнес-зависимость контроллера — фасад.
+        // IOptions — это конфигурация, а не сервис, она остаётся.
+        private readonly IDocumentFacade _documents;
         private readonly MinioOptions _minioOptions;
 
-        public DocumentsController(DocumentBusinessService documentService, IOptions<MinioOptions> minioOptions)
+        public DocumentsController(IDocumentFacade documents, IOptions<MinioOptions> minioOptions)
         {
-            _documentService = documentService;
+            _documents = documents;
             _minioOptions = minioOptions.Value;
         }
 
@@ -30,7 +28,7 @@ namespace DocumentsAPI.Controllers
         [HttpPost("generate-report/{appointmentId}")]
         public async Task<IActionResult> GenerateReport(Guid appointmentId, [FromQuery] string patientName, [FromQuery] string complaints, [FromQuery] string conclusion, [FromQuery] string recommendations, CancellationToken cancellationToken)
         {
-            var metadata = await _documentService.GenerateAndUploadReportAsync(appointmentId, patientName, complaints, conclusion, recommendations, cancellationToken);
+            var metadata = await _documents.CreateAndStoreMedicalReportAsync(appointmentId, patientName, complaints, conclusion, recommendations, cancellationToken);
             return Ok(metadata);
         }
 
@@ -38,25 +36,25 @@ namespace DocumentsAPI.Controllers
         [HttpGet("download-report/{appointmentId}")]
         public async Task<IActionResult> DownloadReport(Guid appointmentId, CancellationToken cancellationToken)
         {
-            var metadata = await _documentService.GetMetadataByEntityIdAsync(appointmentId, cancellationToken);
-            if (metadata == null) return NotFound(new { message = "Document metadata not found." });
+            // Сначала только версия: если кэш браузера свежий, отдаём 304, вообще не читая файл из MinIO.
+            var version = await _documents.GetDocumentVersionAsync(appointmentId, cancellationToken);
+            if (version == null) return NotFound(new { message = "Document metadata not found." });
 
-            var etag = ComputeETag(metadata);
-
-            // Браузер прислал знакомый ETag — файл не менялся, отдаём 304 без тела.
             var ifNoneMatch = Request.Headers.IfNoneMatch.ToString();
-            if (ifNoneMatch == "*" || ifNoneMatch == etag)
+            if (ifNoneMatch == "*" || ifNoneMatch == version.ETag)
             {
                 return StatusCode(StatusCodes.Status304NotModified);
             }
 
             // Разрешаем браузеру держать файл в кэше, чтобы не гонять PDF через API заново.
             Response.Headers["Cache-Control"] = $"public, max-age={_minioOptions.BrowserCacheSeconds}";
-            Response.Headers.ETag = etag;
-            Response.Headers.LastModified = metadata.CreatedAt.ToUniversalTime().ToString("R");
+            Response.Headers.ETag = version.ETag;
+            Response.Headers.LastModified = version.LastModifiedUtc.ToString("R");
 
-            var fileStream = await _documentService.DownloadDocumentStreamAsync(metadata.StorageKey, cancellationToken);
-            return File(fileStream, metadata.ContentType, metadata.FileName);
+            var content = await _documents.DownloadDocumentAsync(appointmentId, cancellationToken);
+            if (content == null) return NotFound(new { message = "Document metadata not found." });
+
+            return File(content.Content, content.ContentType, content.FileName);
         }
 
         // Эндпоинт подписанной ссылки на PDF в MinIO: скачивание идёт мимо API,
@@ -64,31 +62,16 @@ namespace DocumentsAPI.Controllers
         [HttpGet("report-link/{appointmentId}")]
         public async Task<IActionResult> GetReportLink(Guid appointmentId, CancellationToken cancellationToken)
         {
-            var metadata = await _documentService.GetMetadataByEntityIdAsync(appointmentId, cancellationToken);
-            if (metadata == null) return NotFound(new { message = "Document metadata not found." });
-
-            var downloadUrl = await _documentService.GetDocumentDownloadLinkAsync(metadata.StorageKey, metadata.FileName, cancellationToken);
+            var link = await _documents.GetDocumentLinkAsync(appointmentId, cancellationToken);
+            if (link == null) return NotFound(new { message = "Document metadata not found." });
 
             return Ok(new
             {
-                downloadUrl,
-                fileName = metadata.FileName,
+                downloadUrl = link.DownloadUrl,
+                fileName = link.FileName,
                 cacheSeconds = _minioOptions.BrowserCacheSeconds,
                 linkLifetimeMinutes = _minioOptions.LinkLifetimeMinutes
             });
-        }
-
-        /// <summary>
-        /// ETag по неизменяемым признáкам записи: идентификатор, ключ в бакете, размер и дата.
-        /// Новый файл — новый ETag, поэтому браузер сам поймёт, что кэш устарел.
-        /// </summary>
-        private static string ComputeETag(DocumentMetadata metadata)
-        {
-            var raw = $"{metadata.Id}|{metadata.StorageKey}|{metadata.FileSize}|{metadata.CreatedAt:O}";
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
-
-            // ETag по стандарту обязан быть в кавычках.
-            return $"\"{Convert.ToHexString(hash)[..16]}\"";
         }
     }
 }

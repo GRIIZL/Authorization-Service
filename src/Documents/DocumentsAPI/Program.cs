@@ -47,9 +47,10 @@ builder.Services.AddSingleton<IAmazonS3>(serviceProvider =>
 builder.Services.AddScoped<IDocumentMetadataRepository, DocumentMetadataRepository>();
 builder.Services.AddScoped<IFileStorageService, AmazonS3StorageService>();
 
-// Регистрация сервисов логики и QuestPDF
+// Регистрация сервисов логики и QuestPDF. Контроллер знает только фасад (DIP):
+// конкретная реализация подключается здесь, в точке composition root.
 builder.Services.AddScoped<PdfGeneratorService>();
-builder.Services.AddScoped<DocumentBusinessService>();
+builder.Services.AddScoped<IDocumentFacade, DocumentBusinessService>();
 
 var app = builder.Build();
 
