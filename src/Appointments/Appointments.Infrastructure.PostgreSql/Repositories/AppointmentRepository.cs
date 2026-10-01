@@ -77,9 +77,20 @@ namespace Appointments.Infrastructure.PostgreSql.Repositories
                 .ToListAsync(cancellationToken);
         }
 
-        public async Task AddResultAsync(AppointmentResult result, CancellationToken cancellationToken = default)
+        // US-63: приёмы на дату, которым ещё не отправляли напоминание.
+        // Отменённые записи не напоминаем, а без email напоминание отправить некуда.
+        public async Task<IEnumerable<Appointment>> GetForReminderAsync(DateTime date, CancellationToken cancellationToken = default)
         {
-            await _context.AppointmentResults.AddAsync(result, cancellationToken);
+            return await _context.Appointments
+                .Where(a => a.Date.Date == date.Date
+                            && a.Status != AppointmentStatuses.Canceled
+                            && a.ReminderSentAt == null
+                            && a.PatientEmail != string.Empty)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task AddResultAsync(AppointmentResult result, CancellationToken cancellationToken = default)
+        {            await _context.AppointmentResults.AddAsync(result, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
         }
 

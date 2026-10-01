@@ -6,16 +6,24 @@ using System.Threading.Tasks;
 using Appointments.Application.Interfaces;
 using Appointments.Application.Models;
 using Appointments.Domain;
+using Shared.Events;
 
 namespace Appointments.Application.Services
 {
     public class AppointmentService
     {
         private readonly IAppointmentRepository _repository;
+        private readonly IEventPublisher _eventPublisher;
+        private readonly IDocumentsApiClient _documentsApi;
 
-        public AppointmentService(IAppointmentRepository repository)
+        public AppointmentService(
+            IAppointmentRepository repository,
+            IEventPublisher eventPublisher,
+            IDocumentsApiClient documentsApi)
         {
             _repository = repository;
+            _eventPublisher = eventPublisher;
+            _documentsApi = documentsApi;
         }
 
         // US-6 (AC-5): Создание записи на прием
@@ -25,6 +33,7 @@ namespace Appointments.Application.Services
             {
                 Id = Guid.NewGuid(),
                 PatientId = dto.PatientId,
+                PatientEmail = dto.PatientEmail?.Trim() ?? string.Empty,
                 SpecializationId = dto.SpecializationId,
                 DoctorId = dto.DoctorId,
                 ServiceId = dto.ServiceId,
@@ -98,7 +107,15 @@ namespace Appointments.Application.Services
             // Меняем статус приема на "Completed" по завершению
             appointment.Status = AppointmentStatuses.Completed;
             await _repository.UpdateAsync(appointment, cancellationToken);
-            
+
+            // US-68 (AC-1): результат создан — просим шину отправить его пациенту на email.
+            // Публикация асинхронная: создание заключения не ждёт ни PDF, ни почтового провайдера.
+            await _eventPublisher.PublishAsync(new AppointmentResultReadyEvent
+            {
+                AppointmentId = appointment.Id,
+                OccurredAt = DateTime.UtcNow
+            }, cancellationToken);
+
             return true;
         }
 
@@ -119,10 +136,20 @@ namespace Appointments.Application.Services
             result.Recommendations = dto.Recommendations.Trim();
 
             await _repository.UpdateResultAsync(result, cancellationToken);
+
+            // US-68 (AC-1): результаты существующего приёма обновлены — отправляем актуальную версию.
+            await _eventPublisher.PublishAsync(new AppointmentResultReadyEvent
+            {
+                AppointmentId = appointmentId,
+                OccurredAt = DateTime.UtcNow
+            }, cancellationToken);
+
             return true;
         }
 
-        // US-62: Скачивание медицинского результата в PDF-формате (генерация документа делегирована SimplePdfGenerator)
+        // US-62: Скачивание медицинского результата в PDF-формате.
+        // Верстка делегирована Documents API (QuestPDF + MinIO): сервис записей
+        // больше не формирует документ сам и не зависит от текстового генератора.
         public async Task<byte[]> GenerateAppointmentResultPdfAsync(Guid appointmentId, CancellationToken cancellationToken = default)
         {
             var app = await _repository.GetByIdAsync(appointmentId, cancellationToken);
@@ -130,18 +157,13 @@ namespace Appointments.Application.Services
 
             if (app == null || res == null) return Array.Empty<byte>();
 
-            // Формируем структуру документа по требованиям US-62 / AC-3
-            return SimplePdfGenerator.Generate(
-                "INNOWISE CLINIC - MEDICAL REPORT",
-                new List<(string, string)>
-                {
-                    ("Date of Appointment", app.Date.ToShortDateString()),
-                    ("Timeslot", app.Timeslot),
-                    ("Status", app.Status),
-                    ("Complaints", res.Complaints),
-                    ("Conclusion", res.Conclusion),
-                    ("Recommendations", res.Recommendations)
-                });
+            return await _documentsApi.GenerateMedicalReportAsync(
+                appointmentId,
+                "Patient", // TODO: заменить на ФИО пациента из Profiles API
+                res.Complaints,
+                res.Conclusion,
+                res.Recommendations,
+                cancellationToken);
         }
     }
 }

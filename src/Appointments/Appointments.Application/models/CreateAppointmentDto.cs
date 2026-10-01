@@ -8,6 +8,12 @@ namespace Appointments.Application.Models
         [Required]
         public Guid PatientId { get; set; }
 
+        // Email пациента для отправки уведомлений (вариант A — денормализация).
+        // Не обязателен: если не передан, напоминание/результат просто не отправятся.
+        [EmailAddress(ErrorMessage = "Please, enter a valid email")]
+        public string? PatientEmail { get; set; }
+
+
         [Required(ErrorMessage = "Please, choose the specialization")] // Текст по US-6 F-1
         public string SpecializationId { get; set; } = string.Empty;
 
