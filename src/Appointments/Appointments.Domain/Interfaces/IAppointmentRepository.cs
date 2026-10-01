@@ -19,6 +19,11 @@ namespace Appointments.Application.Interfaces
         Task<IEnumerable<Appointment>> GetActiveBySpecializationIdAsync(string specializationId, CancellationToken cancellationToken = default);
         Task<IEnumerable<Appointment>> GetActiveByServiceIdAsync(string serviceId, CancellationToken cancellationToken = default);
 
+        // US-63: приёмы на указанную дату, которым ещё не отправляли напоминание
+        // (не отменённые, с заполненным email). Используется Quartz-задачей.
+        Task<IEnumerable<Appointment>> GetForReminderAsync(DateTime date, CancellationToken cancellationToken = default);
+
+
         // Методы для работы с заключениями
         Task AddResultAsync(AppointmentResult result, CancellationToken cancellationToken = default);
         Task<bool> HasResultAsync(Guid appointmentId, CancellationToken cancellationToken = default);

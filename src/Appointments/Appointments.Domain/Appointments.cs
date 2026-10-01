@@ -8,6 +8,10 @@ namespace Appointments.Domain
         
         // Внешний ключ пациента из Profiles API
         public Guid PatientId { get; set; }
+
+        // Денормализованный email пациента (вариант A): нужен для отправки писем
+        // без синхронного вызова Profiles/Auth на каждом приёме.
+        public string PatientEmail { get; set; } = string.Empty;
         
         // Внешние межсервисные ключи связки (AC-3 в ТЗ)
         public string SpecializationId { get; set; } = string.Empty; // Из Services API
@@ -21,6 +25,11 @@ namespace Appointments.Domain
 
         // Статус записи: "Pending", "Approved", "Canceled", "Completed"
         public string Status { get; set; } = AppointmentStatuses.Pending;
+
+        // Момент отправки напоминания за день до приёма (US-63).
+        // null — напоминание ещё не отправлялось; защищает от повторной отправки.
+        public DateTime? ReminderSentAt { get; set; }
+
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

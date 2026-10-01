@@ -5,6 +5,8 @@ using Appointments.Application.Services;
 using Appointments.Infrastructure.PostgreSql.Data;
 using Appointments.Infrastructure.PostgreSql.Repositories;
 using Appointments.Infrastructure.RabbitMQ;
+using Appointments.Infrastructure.Notifications;
+using Appointments.Infrastructure.Scheduling;
 
 // «Прививка» от конфликтов UTC часовых поясов Postgres — один раз при старте приложения (SRP),
 // а не при каждом создании модели DbContext
@@ -45,8 +47,37 @@ builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
 // Регистрация обработчика событий специализаций (DIP: интерфейс → реализация)
 builder.Services.AddScoped<ISpecializationEventHandlingService, SpecializationEventHandlingService>();
 
+// Настройки уведомлений (US-63/US-68): адрес Documents API, cron напоминаний, заглушки имён
+builder.Services.Configure<NotificationOptions>(
+    builder.Configuration.GetSection(NotificationOptions.SectionName));
+builder.Services.Configure<SendGridOptions>(
+    builder.Configuration.GetSection(SendGridOptions.SectionName));
+
+// Фасад уведомлений: связывает репозиторий, Documents API и отправку почты
+builder.Services.AddScoped<IAppointmentNotificationService, AppointmentNotificationService>();
+
+// Публикатор событий: адаптер над MassTransit IPublishEndpoint
+builder.Services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+
+// Клиент Documents API: сервис записей не верстает PDF сам, а делегирует это Documents
+builder.Services.AddHttpClient<IDocumentsApiClient, DocumentsApiClient>();
+
+// Выбор почтового провайдера: с API-ключом — SendGrid, без него — лог-заглушка
+var sendGridApiKey = builder.Configuration.GetSection(SendGridOptions.SectionName)["ApiKey"];
+if (!string.IsNullOrWhiteSpace(sendGridApiKey))
+{
+    builder.Services.AddScoped<IEmailSender, SendGridEmailSender>();
+}
+else
+{
+    builder.Services.AddScoped<IEmailSender, LogEmailSender>();
+}
+
 // Регистрация шины MassTransit (RabbitMQ): consumer + endpoint
 builder.Services.AddAppointmentsMessaging(builder.Configuration);
+
+// Quartz: фоновая задача напоминаний с cron-триггером (US-63)
+builder.Services.AddAppointmentsScheduling(builder.Configuration);
 
 var app = builder.Build();
 

@@ -21,6 +21,8 @@
     <ProjectReference Include="..\Appointments.Application\Appointments.Application.csproj" />
     <ProjectReference Include="..\Appointments.Infrastructure.PostgreSql\Appointments.Infrastructure.PostgreSql.csproj" />
     <ProjectReference Include="..\Appointments.Infrastructure.RabbitMQ\Appointments.Infrastructure.RabbitMQ.csproj" />
+    <ProjectReference Include="..\Appointments.Infrastructure.Notifications\Appointments.Infrastructure.Notifications.csproj" />
+    <ProjectReference Include="..\Appointments.Infrastructure.Scheduling\Appointments.Infrastructure.Scheduling.csproj" />
   </ItemGroup>
 
 </Project>
