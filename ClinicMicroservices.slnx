@@ -45,4 +45,8 @@
   <Folder Name="/Shared/">
     <Project Path="src/Shared/Shared.Events/Shared.Events.csproj" />
   </Folder>
+  <Folder Name="/src/Shared/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Services.Application.Tests/Services.Application.Tests.csproj" />
+  </Folder>
 </Solution>
